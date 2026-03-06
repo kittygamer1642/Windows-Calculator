@@ -1,55 +1,115 @@
 #include <windows.h>
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
 
 // Global handles for controls
 HWND hTextInput;
 HWND hButton;
 HWND hOutputText;
-int operatorIdx = 0;
 
-// Function to extract numbers from equation provided in the text input
-int extractNumber(const char* str, size_t startIndex) {
-    int number = 0;
-    for (size_t i = startIndex; i < strlen(str); i++) {
-        if (str[i] >= '0' && str[i] <= '9') {
-            number = number * 10 + (str[i] - '0');
+// Parser state
+const char* expr;
+int pos;
+int parseError;
+
+// Forward declarations
+double parseExpression();
+
+double parseNumber() {
+    double num = 0;
+    if (!isdigit(expr[pos])) {
+        parseError = 1;
+        return 0;
+    }
+    while (isdigit(expr[pos])) {
+        num = num * 10 + (expr[pos] - '0');
+        pos++;
+    }
+    // Handle decimal point
+    if (expr[pos] == '.') {
+        pos++;
+        double decimal = 0.1;
+        while (isdigit(expr[pos])) {
+            num += (expr[pos] - '0') * decimal;
+            decimal *= 0.1;
+            pos++;
+        }
+    }
+    return num;
+}
+
+double parseFactor() {
+    if (expr[pos] == '(') {
+        pos++;  // Skip '('
+        double result = parseExpression();
+        if (expr[pos] == ')') {
+            pos++;  // Skip ')'
         } else {
-            break;  // Stop at first non-digit character
+            parseError = 1;
         }
+        return result;
     }
-    return number;
+    return parseNumber();
 }
 
-int extractOperator(const char* str) {
-    for (size_t i = 0; i < strlen(str); i++) {
-        if (str[i] == '+' || str[i] == '-' || str[i] == '*' || str[i] == '/') {
-            operatorIdx = i;
-            return str[i];
-        }
-    }
-    return 0; // No operator found
-}
-
-int calculate(int num1, int num2, char op) {
-    switch (op) {
-        case '+':
-            return num1 + num2;
-        case '-':
-            return num1 - num2;
-        case '*':
-            return num1 * num2;
-        case '/':
-            if (num2 != 0) {
-                return num1 / num2;
-            } else {
-                MessageBoxA(NULL, "Division by zero is not allowed!", "Error", MB_OK | MB_ICONERROR);
+double parseTerm() {
+    double result = parseFactor();
+    
+    while (expr[pos] == '*' || expr[pos] == '/') {
+        char op = expr[pos];
+        pos++;
+        double right = parseFactor();
+        
+        if (op == '*') {
+            result = result * right;
+        } else {
+            if (right == 0) {
+                parseError = 1;
                 return 0;
             }
-        default:
-            MessageBoxA(NULL, "Invalid operator!", "Error", MB_OK | MB_ICONERROR);
-            return 0;
+            result = result / right;
+        }
     }
+    return result;
+}
+
+double parseExpression() {
+    double result = parseTerm();
+    
+    while (expr[pos] == '+' || expr[pos] == '-') {
+        char op = expr[pos];
+        pos++;
+        double right = parseTerm();
+        
+        if (op == '+') {
+            result = result + right;
+        } else {
+            result = result - right;
+        }
+    }
+    return result;
+}
+
+double evaluateExpression(const char* expression) {
+    expr = expression;
+    pos = 0;
+    parseError = 0;
+    
+    // Skip leading whitespace
+    while (expr[pos] == ' ') pos++;
+    
+    double result = parseExpression();
+    
+    // Skip trailing whitespace
+    while (expr[pos] == ' ') pos++;
+    
+    // Check if we consumed the entire expression
+    if (expr[pos] != '\0') {
+        parseError = 1;
+    }
+    
+    return result;
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -84,21 +144,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     // Get text from input field
                     GetWindowTextA(hTextInput, buffer, sizeof(buffer));
                     
-                    // Extract number from the input text
-                    int number1 = extractNumber(buffer, 0);
-                    int op = extractOperator(buffer);
-                    int number2 = extractNumber(strchr(buffer, op) + 1, 0);
-
-                    int result = calculate(number1, number2, op);
-
-                    // Display it in output
-
-                    char outputBuffer[256];
-                    sprintf(outputBuffer, buffer);
-                    strcat(outputBuffer, " = ");
-                    char answerBuffer[256];
-                    sprintf(answerBuffer, "%d", result);
-                    strcat(outputBuffer, answerBuffer);
+                    // Parse and evaluate the expression
+                    double result = evaluateExpression(buffer);
+                    
+                    // Display result
+                    char outputBuffer[512];
+                    if (parseError) {
+                        sprintf(outputBuffer, "Error: Invalid expression");
+                    } else {
+                        sprintf(outputBuffer, "%s = %.6g", buffer, result);
+                    }
                     SetWindowTextA(hOutputText, outputBuffer);
                 }
             }
@@ -132,7 +187,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     RegisterClass(&wc);
     
-    HWND hwnd = CreateWindowEx(0, CLASS_NAME, "Just a Calculator", WS_OVERLAPPEDWINDOW,
+    HWND hwnd = CreateWindowEx(0, CLASS_NAME, "Calculator", WS_OVERLAPPEDWINDOW,
                                CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,
                                NULL, NULL, hInstance, NULL);
     
