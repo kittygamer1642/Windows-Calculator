@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <math.h>
 
 // Global handles for controls
 HWND hTextInput;
@@ -56,19 +57,21 @@ double parseFactor() {
 double parseTerm() {
     double result = parseFactor();
     
-    while (expr[pos] == '*' || expr[pos] == '/') {
+    while (expr[pos] == '*' || expr[pos] == '/' || expr[pos] == '^') {
         char op = expr[pos];
         pos++;
         double right = parseFactor();
         
         if (op == '*') {
             result = result * right;
-        } else {
+        } else if (op == '/') {
             if (right == 0) {
                 parseError = 1;
                 return 0;
             }
             result = result / right;
+        } else {
+            result = pow(result, right);
         }
     }
     return result;
